@@ -323,9 +323,18 @@ class TelegramBot:
         servers = settings.get("servers", [])
         threshold = settings.get("threshold", 0)
         mode = settings.get("mode", "total")
+
+        if servers:
+            servers_str = "\n".join(
+                f"- {self.discord_bot.client.get_guild(s_id).name} (ID: {s_id})"
+                for s_id in servers
+            )
+        else:
+            servers_str = "нет"
+
         text = (
             f"Текущие настройки:\n"
-            f"Отслеживаемые сервера: {', '.join(map(str, servers)) if servers else 'нет'}\n"
+            f"Отслеживаемые сервера:\n{servers_str}\n"
             f"Порог: {threshold}\n"
             f"Режим: {mode}\n"
         )
