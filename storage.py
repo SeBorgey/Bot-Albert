@@ -1,7 +1,11 @@
 import json
 import os
 import logging
-from config import DB_PATH
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DB_PATH = os.getenv("DB_PATH", "data.json")
 
 class Storage:
     def __init__(self):
