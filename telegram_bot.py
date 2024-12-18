@@ -2,14 +2,20 @@ import asyncio
 import logging
 import os
 from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_ADMIN_ID = os.getenv("TELEGRAM_ADMIN_ID", "")
+
 
 class TelegramBot:
     def __init__(self, storage):
@@ -19,39 +25,57 @@ class TelegramBot:
         self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
         self.dp = Dispatcher()
 
-        # Создаем клавиатуру с кнопками
+        # Состояния пользователя: user_id -> {"action": "set_threshold"/"add_server"/"remove_server"/"bugreport"}
+        self.user_states = {}
+
+        # Главное меню с русскими кнопками в 2 ряда
+        # Помощь, Настройки, Порог, Режим, Добавить, Удалить, Багрепорт
         self.main_keyboard = ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="/help"), KeyboardButton(text="/settings")]
+                [KeyboardButton(text="Помощь"), KeyboardButton(text="Настройки")],
+                [KeyboardButton(text="Порог"), KeyboardButton(text="Режим")],
+                [KeyboardButton(text="Добавить"), KeyboardButton(text="Удалить")],
+                [KeyboardButton(text="Багрепорт")]
             ],
             resize_keyboard=True
         )
 
         @self.dp.message(Command("start"))
         async def cmd_start(message: types.Message):
-            logging.debug(f"Received /start from user_id={message.from_user.id}.")
             user_id = message.from_user.id
+            logging.debug(f"Received /start from user_id={user_id}.")
             await self.handle_start_command(user_id)
             await message.answer(
-                "Привет! Используй /help чтобы увидеть доступные команды.",
+                "Привет! Ниже есть меню с кнопками для управления ботом.\nИли используйте /help для списка команд.",
                 reply_markup=self.main_keyboard
             )
 
+        # Команда /help осталась, чтобы не ломать логику
         @self.dp.message(Command("help"))
         async def cmd_help(message: types.Message):
-            logging.debug(f"Received /help from user_id={message.from_user.id}.")
+            user_id = message.from_user.id
+            logging.debug(f"Received /help from user_id={user_id}.")
             help_text = (
                 "Список команд:\n"
                 "/help - показать это сообщение\n"
                 "/setthreshold <число> - установить порог уведомления\n"
                 "/setmode <total|max_channel> - установить режим подсчёта\n"
-                "/addserver <server_id> - добавить сервер для отслеживания\n"
-                "/removeserver <server_id> - убрать сервер из отслеживания\n"
+                "/addserver <server_id> - добавить сервер\n"
+                "/removeserver <server_id> - убрать сервер\n"
                 "/settings - показать текущие настройки\n"
-                "/bugreport <текст> - отправить сообщение администратору\n"
+                "/bugreport <текст> - отправить сообщение администратору\n\n"
+                "Или используйте кнопки для взаимодействия."
             )
             await message.answer(help_text)
 
+        # Команда /settings осталась
+        @self.dp.message(Command("settings"))
+        async def cmd_settings(message: types.Message):
+            user_id = message.from_user.id
+            logging.debug(f"Received /settings from user_id={user_id}.")
+            await self.handle_settings_command(user_id, message)
+
+        # Остальные команды изначальной логики остаются, чтобы не ломать существующий функционал:
         @self.dp.message(Command("setthreshold"))
         async def cmd_setthreshold(message: types.Message):
             logging.debug(f"Received /setthreshold from user_id={message.from_user.id}.")
@@ -115,12 +139,6 @@ class TelegramBot:
             await self.handle_remove_server_command(user_id, server_id)
             await message.answer("Сервер удален.")
 
-        @self.dp.message(Command("settings"))
-        async def cmd_settings(message: types.Message):
-            logging.debug(f"Received /settings from user_id={message.from_user.id}.")
-            user_id = message.from_user.id
-            await self.handle_settings_command(user_id, message)
-
         @self.dp.message(Command("bugreport"))
         async def cmd_bugreport(message: types.Message):
             # Формат: /bugreport <текст>
@@ -132,6 +150,104 @@ class TelegramBot:
                 return
             report_text = parts[1]
             await self.handle_bugreport_command(user_id, report_text, message)
+
+        # Обработка нажатий на кнопки без слеш-команд:
+        @self.dp.message(F.text == "Помощь")
+        async def btn_help(message: types.Message):
+            # Показываем то же, что и /help
+            await cmd_help(message)
+
+        @self.dp.message(F.text == "Настройки")
+        async def btn_settings(message: types.Message):
+            await cmd_settings(message)
+
+        @self.dp.message(F.text == "Порог")
+        async def btn_threshold(message: types.Message):
+            user_id = message.from_user.id
+            await message.answer("Введите новый порог (число):")
+            self.user_states[user_id] = {"action": "set_threshold"}
+
+        @self.dp.message(F.text == "Режим")
+        async def btn_mode(message: types.Message):
+            user_id = message.from_user.id
+            # Показываем inline-клавиатуру для выбора режима
+            inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Суммарно (total)", callback_data="mode_total")],
+                [InlineKeyboardButton(text="Макс. канал (max_channel)", callback_data="mode_max")]
+            ])
+            await message.answer("Выберите режим:", reply_markup=inline_kb)
+
+        @self.dp.callback_query()
+        async def callback_mode(call: types.CallbackQuery):
+            user_id = call.from_user.id
+            if call.data == "mode_total":
+                await self.handle_set_mode_command(user_id, "total")
+                await call.message.edit_text("Режим обновлен на total.")
+            elif call.data == "mode_max":
+                await self.handle_set_mode_command(user_id, "max_channel")
+                await call.message.edit_text("Режим обновлен на max_channel.")
+            await call.answer()
+
+        @self.dp.message(F.text == "Добавить")
+        async def btn_add_server(message: types.Message):
+            user_id = message.from_user.id
+            await message.answer("Введите ID сервера (число):")
+            self.user_states[user_id] = {"action": "add_server"}
+
+        @self.dp.message(F.text == "Удалить")
+        async def btn_remove_server(message: types.Message):
+            user_id = message.from_user.id
+            await message.answer("Введите ID сервера (число):")
+            self.user_states[user_id] = {"action": "remove_server"}
+
+        @self.dp.message(F.text == "Багрепорт")
+        async def btn_bugreport_button(message: types.Message):
+            user_id = message.from_user.id
+            await message.answer("Опишите проблему:")
+            self.user_states[user_id] = {"action": "bugreport"}
+
+        # Обработчик остальных сообщений - когда ждём ответа от пользователя
+        @self.dp.message()
+        async def catch_all(message: types.Message):
+            user_id = message.from_user.id
+            user_state = self.user_states.get(user_id, {})
+            action = user_state.get("action")
+
+            if action == "set_threshold":
+                if not message.text.isdigit():
+                    await message.answer("Порог должен быть числом. Попробуйте ещё раз.")
+                    return
+                threshold = int(message.text)
+                await self.handle_set_threshold_command(user_id, threshold)
+                await message.answer(f"Порог установлен на {threshold}.")
+                self.user_states[user_id] = {}
+
+            elif action == "add_server":
+                if not message.text.isdigit():
+                    await message.answer("ID сервера должен быть числом.")
+                    return
+                server_id = int(message.text)
+                await self.handle_add_server_command(user_id, server_id)
+                await message.answer(f"Сервер {server_id} добавлен.")
+                self.user_states[user_id] = {}
+
+            elif action == "remove_server":
+                if not message.text.isdigit():
+                    await message.answer("ID сервера должен быть числом.")
+                    return
+                server_id = int(message.text)
+                await self.handle_remove_server_command(user_id, server_id)
+                await message.answer(f"Сервер {server_id} удален.")
+                self.user_states[user_id] = {}
+
+            elif action == "bugreport":
+                report_text = message.text.strip()
+                await self.handle_bugreport_command(user_id, report_text, message)
+                self.user_states[user_id] = {}
+
+            else:
+                # Нет активного действия - можно ответить подсказкой
+                await message.answer("Используйте меню или /help для просмотра команд.")
 
     def set_discord_bot(self, discord_bot):
         logging.debug("Setting discord bot in TelegramBot.")
