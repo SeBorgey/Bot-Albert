@@ -40,3 +40,24 @@ class Storage:
     def get_all_users(self):
         logging.debug("Getting all users.")
         return list(self.data["users"].keys())
+
+    def get_user_server_count(self, user_id, server_id):
+        # Возвращаем сохраненное количество пользователей для данного пользователя и сервера.
+        # Если данных нет, считаем что раньше было 0.
+        settings = self.get_user_settings(user_id)
+        if not settings:
+            return 0
+        server_counts = settings.get("server_counts", {})
+        return server_counts.get(str(server_id), 0)
+
+    def update_user_server_count(self, user_id, server_id, count):
+        # Обновляем сохраненное количество людей для (user, server)
+        settings = self.get_user_settings(user_id) or {
+            "servers": [],
+            "threshold": 0,
+            "mode": "total"
+        }
+        server_counts = settings.get("server_counts", {})
+        server_counts[str(server_id)] = count
+        settings["server_counts"] = server_counts
+        self.update_user_settings(user_id, settings)

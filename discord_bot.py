@@ -16,20 +16,17 @@ class DiscordBot:
         self.telegram_bot = None
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True, members=True))
         self.initialized = False
-        self.tracked_data = {}
         self.notification_cooldowns = {}  # (user_str, server_id) -> timestamp, до которого не уведомлять
 
         @self.client.event
         async def on_ready():
             logging.debug("DiscordBot is ready.")
-            guilds = self.client.guilds
-            # Начальный опрос для всех гильдий
-            for g in guilds:
-                logging.debug(f"Initial poll for guild_id={g.id}.")
-                user_id_list, max_in_channel, total_in_channels = await self.get_current_users_in_channels(g.id)
-                # Проинициализировать tracked_data и проверить пороги
-                await self.initial_poll(g.id, user_id_list, max_in_channel, total_in_channels)
+            # Просто помечаем что инициализированы. Начальный опрос отдельно не нужен
+            # так как при любом обновлении голосовых каналов мы будем проверять.
             self.initialized = True
+
+            # Дополнительно можем вручную запустить проверку всех гильдий:
+            await self.initial_check_all_guilds()
 
         @self.client.event
         async def on_voice_state_update(member, before, after):
@@ -58,11 +55,12 @@ class DiscordBot:
             return False
         return True
 
-    async def track_voice_channels(self):
-        logging.debug("Tracking voice channels for all guilds.")
+    async def initial_check_all_guilds(self):
+        # Проверим все гильдии при старте, чтобы если после перезапуска число сразу превышает порог,
+        # то уведомить (если раньше было ниже).
         for guild in self.client.guilds:
             user_id_list, max_in_channel, total_in_channels = await self.get_current_users_in_channels(guild.id)
-            await self.initial_poll(guild.id, user_id_list, max_in_channel, total_in_channels)
+            await self.check_thresholds_for_guild(guild.id, user_id_list, max_in_channel, total_in_channels)
 
     async def get_current_users_in_channels(self, server_id):
         logging.debug(f"Getting current users in channels for server_id={server_id}.")
@@ -82,21 +80,6 @@ class DiscordBot:
                 user_set.add(m.name)
         return list(user_set), max_count, total_count
 
-    async def initial_poll(self, server_id, user_id_list, max_in_channel, total_in_channels):
-        # Инициализируем tracked_data для всех пользователей, отслеживающих этот сервер
-        for user_str in self.storage.get_all_users():
-            user_settings = self.storage.get_user_settings(user_str)
-            if not user_settings:
-                continue
-            servers = user_settings.get("servers", [])
-            if server_id not in servers:
-                continue
-            # Изначально считаем, что до опроса было 0
-            self.tracked_data[(user_str, server_id)] = 0
-
-        # После инициализации tracked_data проверим пороги
-        await self.check_thresholds_for_guild(server_id, user_id_list, max_in_channel, total_in_channels)
-
     async def check_thresholds_for_guild(self, server_id, user_id_list, max_in_channel, total_in_channels):
         guild = self.client.get_guild(server_id)
         if not guild:
@@ -114,7 +97,6 @@ class DiscordBot:
             mode = user_settings.get("mode", "total")
             threshold = user_settings.get("threshold", 0)
 
-            # Проверяем таймаут уведомления (cooldown)
             cooldown_key = (user_str, server_id)
             cooldown_expiry = self.notification_cooldowns.get(cooldown_key, 0)
             if current_time < cooldown_expiry:
@@ -141,12 +123,15 @@ class DiscordBot:
                 user_list = max_channel_users
                 channel_name = f"Сервер {guild.name}, канал {max_channel_name}"
 
-            old_count = self.tracked_data.get((user_str, server_id), 0)
+            # Получаем старое значение из хранилища
+            old_count = self.storage.get_user_server_count(user_str, server_id)
+
+            # Проверяем переход через порог
             if old_count < threshold and count >= threshold:
                 logging.debug(f"Threshold reached for user_id={user_str} on guild_id={guild.id}.")
                 if self.telegram_bot:
                     self.telegram_bot.notify_user(user_str, channel_name, count, user_list)
-                # Устанавливаем таймаут после уведомления
                 self.notification_cooldowns[cooldown_key] = current_time + TRACKING_TIMEOUT_SEC
 
-            self.tracked_data[(user_str, server_id)] = count
+            # Обновляем сохраненное количество
+            self.storage.update_user_server_count(user_str, server_id, count)
