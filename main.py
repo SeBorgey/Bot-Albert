@@ -35,32 +35,46 @@ class TutorialBot(commands.Cog):
             await ctx.send('Bot Permission Missing!')
 
 
-# Gateway intents
-intents = discord.Intents.default()
-intents.members = True
-intents.presences = True
-
-# Bot prefix
-bot = commands.Bot(command_prefix=commands.when_mentioned_or('!'),
-                   description='A Simple Tutorial Bot', intents=intents)
-
-# Logging
-logger = logging.getLogger('discord')
-logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
-
-# Loading data from .env file
-load_dotenv()
-token = os.getenv('TOKEN')
-
-if __name__ == '__main__':
-    # Load extension
+async def load_extensions(bot):
     for filename in os.listdir('./commands'):
         if filename.endswith('.py'):
-            bot.load_extension(f'commands.{filename[: -3]}')
+            try:
+                await bot.load_extension(f'commands.{filename[:-3]}')
+            except Exception as e:
+                print(f"Failed to load extension {filename}: {e}")
 
-    bot.add_cog(TutorialBot(bot))
 
-    bot.run(token, reconnect=True)
+async def main():
+    # Gateway intents
+    intents = discord.Intents.default()
+    intents.message_content = True  # Enable message content intent
+    intents.members = True
+    intents.presences = True
+
+    # Bot prefix
+    bot = commands.Bot(command_prefix=commands.when_mentioned_or('!'),
+                       description='A Simple Tutorial Bot', intents=intents)
+
+    # Logging
+    logger = logging.getLogger('discord')
+    # logger.setLevel(logging.DEBUG)
+    handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+    logger.addHandler(handler)
+
+    # Load extension
+    await load_extensions(bot)
+
+    # Add cog
+    await bot.add_cog(TutorialBot(bot))
+
+    # Loading data from .env file
+    load_dotenv()
+    token = os.getenv('TOKEN')
+
+    # Run bot
+    await bot.start(token, reconnect=True)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

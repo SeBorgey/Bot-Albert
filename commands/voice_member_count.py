@@ -1,10 +1,15 @@
-import time
 import json
+import time
+import logging
+from discord.ext import commands
 import telebot
-from discord.ext import commands, tasks
 
+# Initialize the Telegram bot
 bot = telebot.TeleBot('6832477390:AAE-DnGXPYO5DEUVLcS_EfQHk1hBY6EWGBk')
 
+# Configure logging for debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class VoiceMemberCount(commands.Cog):
     def __init__(self, bot):
@@ -63,6 +68,5 @@ class VoiceMemberCount(commands.Cog):
             with open('./databases/voice_member_count.json', 'w') as remove_voice_member_data:
                 json.dump(voice_member_data, remove_voice_member_data, indent=4)
 
-
-def setup(bot):
-    bot.add_cog(VoiceMemberCount(bot))
+async def setup(bot):
+    await bot.add_cog(VoiceMemberCount(bot))
