@@ -4,10 +4,12 @@ import os
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_ADMIN_ID = os.getenv("TELEGRAM_ADMIN_ID", "")
 
 class TelegramBot:
     def __init__(self, storage):
@@ -17,12 +19,23 @@ class TelegramBot:
         self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
         self.dp = Dispatcher()
 
+        # Создаем клавиатуру с кнопками
+        self.main_keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="/help"), KeyboardButton(text="/settings")]
+            ],
+            resize_keyboard=True
+        )
+
         @self.dp.message(Command("start"))
         async def cmd_start(message: types.Message):
             logging.debug(f"Received /start from user_id={message.from_user.id}.")
             user_id = message.from_user.id
             await self.handle_start_command(user_id)
-            await message.answer("Привет! Используй /help чтобы увидеть доступные команды.")
+            await message.answer(
+                "Привет! Используй /help чтобы увидеть доступные команды.",
+                reply_markup=self.main_keyboard
+            )
 
         @self.dp.message(Command("help"))
         async def cmd_help(message: types.Message):
@@ -35,6 +48,7 @@ class TelegramBot:
                 "/addserver <server_id> - добавить сервер для отслеживания\n"
                 "/removeserver <server_id> - убрать сервер из отслеживания\n"
                 "/settings - показать текущие настройки\n"
+                "/bugreport <текст> - отправить сообщение администратору\n"
             )
             await message.answer(help_text)
 
@@ -42,11 +56,15 @@ class TelegramBot:
         async def cmd_setthreshold(message: types.Message):
             logging.debug(f"Received /setthreshold from user_id={message.from_user.id}.")
             user_id = message.from_user.id
-            parts = message.text.strip().split()
+            parts = message.text.strip().split(maxsplit=1)
             if len(parts) < 2:
                 await message.answer("Укажи threshold")
                 return
-            threshold = int(parts[1])
+            threshold_str = parts[1]
+            if not threshold_str.isdigit():
+                await message.answer("Порог должен быть числом.")
+                return
+            threshold = int(threshold_str)
             await self.handle_set_threshold_command(user_id, threshold)
             await message.answer("Порог установлен.")
 
@@ -54,7 +72,7 @@ class TelegramBot:
         async def cmd_setmode(message: types.Message):
             logging.debug(f"Received /setmode from user_id={message.from_user.id}.")
             user_id = message.from_user.id
-            parts = message.text.strip().split()
+            parts = message.text.strip().split(maxsplit=1)
             if len(parts) < 2:
                 await message.answer("Укажи режим: total или max_channel")
                 return
@@ -69,11 +87,15 @@ class TelegramBot:
         async def cmd_addserver(message: types.Message):
             logging.debug(f"Received /addserver from user_id={message.from_user.id}.")
             user_id = message.from_user.id
-            parts = message.text.strip().split()
+            parts = message.text.strip().split(maxsplit=1)
             if len(parts) < 2:
                 await message.answer("Укажи server_id")
                 return
-            server_id = int(parts[1])
+            server_str = parts[1]
+            if not server_str.isdigit():
+                await message.answer("server_id должен быть числом.")
+                return
+            server_id = int(server_str)
             await self.handle_add_server_command(user_id, server_id)
             await message.answer("Сервер добавлен.")
 
@@ -81,11 +103,15 @@ class TelegramBot:
         async def cmd_removeserver(message: types.Message):
             logging.debug(f"Received /removeserver from user_id={message.from_user.id}.")
             user_id = message.from_user.id
-            parts = message.text.strip().split()
+            parts = message.text.strip().split(maxsplit=1)
             if len(parts) < 2:
                 await message.answer("Укажи server_id")
                 return
-            server_id = int(parts[1])
+            server_str = parts[1]
+            if not server_str.isdigit():
+                await message.answer("server_id должен быть числом.")
+                return
+            server_id = int(server_str)
             await self.handle_remove_server_command(user_id, server_id)
             await message.answer("Сервер удален.")
 
@@ -94,6 +120,18 @@ class TelegramBot:
             logging.debug(f"Received /settings from user_id={message.from_user.id}.")
             user_id = message.from_user.id
             await self.handle_settings_command(user_id, message)
+
+        @self.dp.message(Command("bugreport"))
+        async def cmd_bugreport(message: types.Message):
+            # Формат: /bugreport <текст>
+            logging.debug(f"Received /bugreport from user_id={message.from_user.id}.")
+            user_id = message.from_user.id
+            parts = message.text.strip().split(maxsplit=1)
+            if len(parts) < 2:
+                await message.answer("Укажи текст багрепорта после команды /bugreport")
+                return
+            report_text = parts[1]
+            await self.handle_bugreport_command(user_id, report_text, message)
 
     def set_discord_bot(self, discord_bot):
         logging.debug("Setting discord bot in TelegramBot.")
@@ -176,6 +214,16 @@ class TelegramBot:
             f"Режим: {mode}\n"
         )
         await message.answer(text)
+
+    async def handle_bugreport_command(self, user_id, report_text, message: types.Message):
+        logging.debug(f"Handling bugreport from user_id={user_id}.")
+        if not TELEGRAM_ADMIN_ID:
+            await message.answer("Администратор не настроен. Сообщение не отправлено.")
+            return
+        admin_id = int(TELEGRAM_ADMIN_ID)
+        report_msg = f"Bugreport from user_id={user_id}:\n{report_text}"
+        await self.bot.send_message(admin_id, report_msg)
+        await message.answer("Спасибо за ваш отзыв! Ваш багрепорт отправлен администратору.")
 
     def notify_user(self, user_id, channel_name, user_count, user_list):
         logging.debug(f"Notifying user_id={user_id} about channel={channel_name}, count={user_count}.")
