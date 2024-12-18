@@ -1,5 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
 from config import TELEGRAM_BOT_TOKEN
 
 class TelegramBot:
@@ -9,13 +10,13 @@ class TelegramBot:
         self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
         self.dp = Dispatcher()
 
-        @self.dp.message(commands=['start'])
+        @self.dp.message(Command("start"))
         async def cmd_start(message: types.Message):
             user_id = message.from_user.id
             await self.handle_start_command(user_id)
             await message.answer("Привет. Укажи сервер для отслеживания с помощью /setserver <server_id>")
 
-        @self.dp.message(commands=['setserver'])
+        @self.dp.message(Command("setserver"))
         async def cmd_setserver(message: types.Message):
             user_id = message.from_user.id
             parts = message.text.strip().split()
@@ -26,7 +27,7 @@ class TelegramBot:
             await self.handle_set_server_command(user_id, server_id)
             await message.answer("Сервер установлен. Проверь, что бот находится на нем и имеет права.")
 
-        @self.dp.message(commands=['setthreshold'])
+        @self.dp.message(Command("setthreshold"))
         async def cmd_setthreshold(message: types.Message):
             user_id = message.from_user.id
             parts = message.text.strip().split()
@@ -37,7 +38,7 @@ class TelegramBot:
             await self.handle_set_threshold_command(user_id, threshold)
             await message.answer("Порог установлен.")
 
-        @self.dp.message(commands=['setmode'])
+        @self.dp.message(Command("setmode"))
         async def cmd_setmode(message: types.Message):
             user_id = message.from_user.id
             parts = message.text.strip().split()
@@ -51,7 +52,7 @@ class TelegramBot:
             await self.handle_set_mode_command(user_id, mode)
             await message.answer("Режим обновлен.")
 
-        @self.dp.message(commands=['addchannel'])
+        @self.dp.message(Command("addchannel"))
         async def cmd_addchannel(message: types.Message):
             user_id = message.from_user.id
             parts = message.text.strip().split()
@@ -62,7 +63,7 @@ class TelegramBot:
             await self.handle_add_channel_command(user_id, channel_id)
             await message.answer("Канал добавлен.")
 
-        @self.dp.message(commands=['removechannel'])
+        @self.dp.message(Command("removechannel"))
         async def cmd_removechannel(message: types.Message):
             user_id = message.from_user.id
             parts = message.text.strip().split()

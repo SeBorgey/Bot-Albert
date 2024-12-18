@@ -1,4 +1,3 @@
-# main.py
 from telegram_bot import TelegramBot
 from discord_bot import DiscordBot
 from storage import Storage
