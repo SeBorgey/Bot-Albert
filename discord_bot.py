@@ -3,9 +3,11 @@ import discord
 import logging
 from dotenv import load_dotenv
 import os
+import time  # Для отсчета таймаута
 
 load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
+TRACKING_TIMEOUT_SEC = int(os.getenv("TRACKING_TIMEOUT_SEC", "300"))  # таймаут по умолчанию 300 секунд (5 мин)
 
 class DiscordBot:
     def __init__(self, storage):
@@ -15,6 +17,7 @@ class DiscordBot:
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True, members=True))
         self.initialized = False
         self.tracked_data = {}
+        self.notification_cooldowns = {}  # (user_str, server_id) -> timestamp, до которого не уведомлять
 
         @self.client.event
         async def on_ready():
@@ -99,7 +102,8 @@ class DiscordBot:
         if not guild:
             return
 
-        # Для каждого пользователя проверяем порог
+        current_time = time.time()
+
         for user_str in self.storage.get_all_users():
             user_settings = self.storage.get_user_settings(user_str)
             if not user_settings:
@@ -109,6 +113,13 @@ class DiscordBot:
                 continue
             mode = user_settings.get("mode", "total")
             threshold = user_settings.get("threshold", 0)
+
+            # Проверяем таймаут уведомления (cooldown)
+            cooldown_key = (user_str, server_id)
+            cooldown_expiry = self.notification_cooldowns.get(cooldown_key, 0)
+            if current_time < cooldown_expiry:
+                # Еще действует таймаут, не уведомляем
+                continue
 
             if mode == "total":
                 count = total_in_channels
@@ -135,4 +146,7 @@ class DiscordBot:
                 logging.debug(f"Threshold reached for user_id={user_str} on guild_id={guild.id}.")
                 if self.telegram_bot:
                     self.telegram_bot.notify_user(user_str, channel_name, count, user_list)
+                # Устанавливаем таймаут после уведомления
+                self.notification_cooldowns[cooldown_key] = current_time + TRACKING_TIMEOUT_SEC
+
             self.tracked_data[(user_str, server_id)] = count
