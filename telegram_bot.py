@@ -256,7 +256,7 @@ class TelegramBot:
     async def start_async(self):
         logging.debug("Running TelegramBot polling.")
         await self.bot.delete_webhook(drop_pending_updates=True)
-        await self.dp.start_polling(self.bot)
+        await self.dp.start_polling(self.bot, signals=[])
 
     async def handle_start_command(self, user_id):
         logging.debug(f"Handling start command for user_id={user_id}.")
