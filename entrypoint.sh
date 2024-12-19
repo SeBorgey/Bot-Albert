@@ -9,9 +9,9 @@ BOT_PID=$!
 
 cleanup() {
     echo "Получен SIGTERM, перезапускаем бота..."
-    # Останавливаем предыдущий процесс бота по PID
-    kill $BOT_PID || true
-    sleep 1
+    # Принудительно убиваем старый процесс бота
+    kill -9 $BOT_PID || true
+    sleep 2
     # Запускаем бота снова
     $BOT_CMD &
     BOT_PID=$!
