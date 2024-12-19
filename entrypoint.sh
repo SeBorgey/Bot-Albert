@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 set -e
 
-# Функция, вызываемая при получении SIGTERM
+BOT_CMD="python3 main.py"
+
+# Запускаем бота в фоне и сохраняем его PID
+$BOT_CMD &
+BOT_PID=$!
+
 cleanup() {
     echo "Получен SIGTERM, перезапускаем бота..."
-    pkill -f main.py || true
-    # Небольшая пауза перед перезапуском
+    # Останавливаем предыдущий процесс бота по PID
+    kill $BOT_PID || true
     sleep 1
-    python3 main.py &
+    # Запускаем бота снова
+    $BOT_CMD &
+    BOT_PID=$!
 }
 
-# Устанавливаем trap на SIGTERM
 trap 'cleanup' SIGTERM
 
-# Запускаем бота
-python3 main.py &
-
-# Ждём завершения дочерних процессов
+# Ожидаем завершения процессов
 wait
