@@ -18,12 +18,13 @@ from telegram_bot import TelegramBot
 from discord_bot import DiscordBot
 from storage import Storage
 
-# Создаём Flask-приложение для Render
 app = Flask(__name__)
+
 
 @app.route("/")
 def home():
     return "Bot is running!"
+
 
 async def main_async():
     storage = Storage()
@@ -32,11 +33,11 @@ async def main_async():
     telegram_bot.set_discord_bot(discord_bot)
     discord_bot.set_telegram_bot(telegram_bot)
 
-    # Запускаем ботов параллельно
     await asyncio.gather(
         telegram_bot.start_async(),
         discord_bot.start_async()
     )
+
 
 def main():
     if ENABLE_LOGGING:
@@ -74,17 +75,17 @@ def main():
 
     logging.debug("Starting main.")
 
-    # Запускаем asyncio-цикл в отдельном потоке, чтобы Flask мог работать параллельно
-    loop = asyncio.new_event_loop()
-    def run_bots():
-        loop.run_until_complete(main_async())
+    # Запускаем Flask в отдельном потоке
+    def run_flask():
+        port = int(os.environ.get("PORT", 5000))
+        app.run(host="0.0.0.0", port=port, use_reloader=False)
 
-    t = Thread(target=run_bots)
-    t.start()
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
 
-    # Запускаем Flask-сервер на предоставленном порту
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # Запускаем основной asyncio-цикл в главном потоке
+    asyncio.run(main_async())
+
 
 if __name__ == '__main__':
     main()
