@@ -2,3 +2,4 @@ python-dotenv
 discord
 aiogram
 pynacl
+flask

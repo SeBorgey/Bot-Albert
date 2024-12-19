@@ -3,6 +3,8 @@ import logging
 import os
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
+from flask import Flask
+from threading import Thread
 
 load_dotenv()  # загрузка переменных окружения из .env
 
@@ -10,12 +12,18 @@ ENABLE_LOGGING = os.getenv("ENABLE_LOGGING", "true").lower() == "true"
 LOGGING_TARGET = os.getenv("LOGGING_TARGET", "stdout")  # "file", "stdout", "both"
 LOG_FILE_MAX_BYTES = int(os.getenv("LOG_FILE_MAX_BYTES", "1048576"))  # 1 MB
 LOG_FILE_PATH = os.getenv("LOG_FILE_PATH", "bot.log")  # Если нужно переопределить имя файла
-# Количество резервных копий всегда одна
 LOG_FILE_BACKUP_COUNT = 1
 
 from telegram_bot import TelegramBot
 from discord_bot import DiscordBot
 from storage import Storage
+
+# Создаём Flask-приложение для Render
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
 
 async def main_async():
     storage = Storage()
@@ -24,6 +32,7 @@ async def main_async():
     telegram_bot.set_discord_bot(discord_bot)
     discord_bot.set_telegram_bot(telegram_bot)
 
+    # Запускаем ботов параллельно
     await asyncio.gather(
         telegram_bot.start_async(),
         discord_bot.start_async()
@@ -64,7 +73,18 @@ def main():
     logging.getLogger('discord').setLevel(logging.ERROR)
 
     logging.debug("Starting main.")
-    asyncio.run(main_async())
+
+    # Запускаем asyncio-цикл в отдельном потоке, чтобы Flask мог работать параллельно
+    loop = asyncio.new_event_loop()
+    def run_bots():
+        loop.run_until_complete(main_async())
+
+    t = Thread(target=run_bots)
+    t.start()
+
+    # Запускаем Flask-сервер на предоставленном порту
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == '__main__':
     main()
